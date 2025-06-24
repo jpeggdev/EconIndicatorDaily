@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model EconomicIndicator {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String
+  source      String
+  category    String
+  frequency   String
+  unit        String?
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  data IndicatorData[]
+  explanations IndicatorExplanation[]
+  userPreferences UserPreference[]
+
+  @@map("economic_indicators")
+}
+
+model IndicatorData {
+  id          String @id @default(cuid())
+  indicatorId String
+  date        DateTime
+  value       Float
+  rawData     Json?
+  createdAt   DateTime @default(now())
+
+  indicator EconomicIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([indicatorId, date])
+  @@map("indicator_data")
+}
+
+model IndicatorExplanation {
+  id          String @id @default(cuid())
+  indicatorId String
+  date        DateTime
+  explanation String
+  insights    String?
+  trend       String?
+  impact      String?
+  createdAt   DateTime @default(now())
+
+  indicator EconomicIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([indicatorId, date])
+  @@map("indicator_explanations")
+}
+
+model User {
+  id              String @id @default(cuid())
+  email           String @unique
+  name            String?
+  image           String?
+  emailVerified   DateTime?
+  subscriptionStatus String @default("free") // free, pro, enterprise
+  subscriptionTier String @default("free") // free, pro, enterprise
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+  subscriptionStartDate DateTime?
+  subscriptionEndDate DateTime?
+  subscriptionCancelAtPeriodEnd Boolean @default(false)
+  indicatorAccessCount Int @default(5) // Number of indicators user can access
+  emailNotificationsEnabled Boolean @default(true)
+  weeklyEmailEnabled Boolean @default(false)
+  dailyEmailEnabled Boolean @default(false)
+  lastLoginAt DateTime?
+  trialUsed Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+  preferences UserPreference[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model UserPreference {
+  id          String @id @default(cuid())
+  userId      String
+  indicatorId String
+  alertEnabled Boolean @default(false)
+  alertThreshold Float?
+  createdAt   DateTime @default(now())
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  indicator EconomicIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, indicatorId])
+  @@map("user_preferences")
+}
+
+model ApiRateLimit {
+  id        String @id @default(cuid())
+  source    String @unique
+  requests  Int @default(0)
+  resetDate DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("api_rate_limits")
+}
+
+model ContentTemplate {
+  id        String @id @default(cuid())
+  name      String @unique
+  category  String
+  template  String
+  variables Json?
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("content_templates")
+}
