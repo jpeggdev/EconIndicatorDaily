@@ -16,7 +16,6 @@ import { env } from '../../utils/env';
 import { DataSyncer } from '../../cli/syncData';
 import { 
   adminAuthMiddleware, 
-  devBypassMiddleware, 
   requireAdminLevel 
 } from '../../middleware/auth';
 
@@ -25,7 +24,6 @@ const mockedPrismaClient = PrismaClient as jest.MockedClass<typeof PrismaClient>
 const mockedIndicatorService = IndicatorService as jest.MockedClass<typeof IndicatorService>;
 const mockedDataSyncer = DataSyncer as jest.MockedClass<typeof DataSyncer>;
 const mockedAdminAuthMiddleware = adminAuthMiddleware as jest.MockedFunction<typeof adminAuthMiddleware>;
-const mockedDevBypassMiddleware = devBypassMiddleware as jest.MockedFunction<typeof devBypassMiddleware>;
 const mockedRequireAdminLevel = requireAdminLevel as jest.MockedFunction<typeof requireAdminLevel>;
 
 // Create test app

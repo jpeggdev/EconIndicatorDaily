@@ -34,8 +34,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!mounted) return;
     
     const root = document.documentElement;
+    const body = document.body;
+    
+    // Remove existing theme classes
     root.classList.remove('light', 'dark');
+    body.classList.remove('light', 'dark');
+    
+    // Add new theme class to both html and body
     root.classList.add(theme);
+    body.classList.add(theme);
     
     // Update localStorage
     localStorage.setItem('theme', theme);
@@ -51,18 +58,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Prevent hydration mismatch
   if (!mounted) {
-    return (
-      <div className="dark">
-        {children}
-      </div>
-    );
+    return <>{children}</>;
   }
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
-      <div className={theme}>
-        {children}
-      </div>
+      {children}
     </ThemeContext.Provider>
   );
 }

@@ -146,19 +146,3 @@ export const requireAdminLevel = (minLevel: 'read' | 'write' | 'super') => {
   };
 };
 
-/**
- * Development mode middleware - DEPRECATED AND REMOVED FOR SECURITY
- * 
- * This middleware previously allowed authentication bypass in development mode,
- * but created a critical security vulnerability if accidentally enabled in production.
- * 
- * SECURITY: Always use real authentication, even in development.
- */
-export const devBypassMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  // SECURITY: No bypass allowed - always require real authentication
-  console.error('🚨 SECURITY ERROR: devBypassMiddleware called but auth bypass is disabled for security');
-  console.error('Use proper admin authentication instead');
-  
-  // Always use real admin authentication 
-  adminAuthMiddleware(req, res, next);
-};

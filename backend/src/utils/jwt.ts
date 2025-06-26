@@ -117,28 +117,25 @@ export class JWTUtils {
   }
 
   /**
-   * Check if user is admin based on email
+   * DEPRECATED: Admin identification now handled via database role field
+   * These methods are kept temporarily for backward compatibility
+   * TODO: Remove once all references are updated to use database role
    */
   static isAdminEmail(email: string): boolean {
+    // DEPRECATED: Use user.role === 'admin' instead
     return env.ADMIN_EMAILS.includes(email.toLowerCase());
   }
 
-  /**
-   * Get list of admin emails
-   */
   static getAdminEmails(): string[] {
+    // DEPRECATED: Admin users should be managed via database
     return env.ADMIN_EMAILS;
   }
 
-  /**
-   * Determine admin level based on email
-   */
   static getAdminLevel(email: string): 'read' | 'write' | 'super' | null {
+    // DEPRECATED: Use database role field instead
     if (!this.isAdminEmail(email)) {
       return null;
     }
-    // For now, all admin emails get 'super' access
-    // In the future, this could be configurable per email
     return 'super';
   }
 

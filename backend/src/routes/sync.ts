@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Router, Request, Response, NextFunction } from 'express';
 import { backgroundWorker } from '../services/backgroundWorker';
 import { adminAuthMiddleware, requireAdminLevel } from '../middleware/auth';

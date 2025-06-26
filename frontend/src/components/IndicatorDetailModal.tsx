@@ -28,7 +28,7 @@ export default function IndicatorDetailModal({ indicator, isOpen, onClose }: Ind
     }
   }, [isOpen, indicator]);
 
-  // Click outside to close
+  // Click outside to close and Escape key to close
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
@@ -36,9 +36,19 @@ export default function IndicatorDetailModal({ indicator, isOpen, onClose }: Ind
       }
     };
 
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscapeKey);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('keydown', handleEscapeKey);
+      };
     }
   }, [isOpen, onClose]);
 

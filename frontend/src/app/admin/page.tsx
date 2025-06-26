@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { 
   Settings, 
@@ -18,9 +17,11 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
-  Crown
+  Crown,
+  LogOut
 } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
+import AdminLogin from '@/components/AdminLogin';
 
 interface AdminStats {
   totalUsers: number;
@@ -38,37 +39,134 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
-  const { data: session, status } = useSession();
   const router = useRouter();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'indicators' | 'sync' | 'apis' | 'settings'>('overview');
+  
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [adminUser, setAdminUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  // Check admin access
+  // Check authentication on mount
   useEffect(() => {
-    if (status === 'loading') return;
-    
-    if (!session?.user?.email || !isAdminUser(session.user.email)) {
-      router.push('/');
-      return;
-    }
-    
-    fetchAdminStats();
-  }, [session, status, router]);
+    checkAuthentication();
+  }, []);
 
-  const isAdminUser = (email: string) => {
-    // Get admin emails from environment - fallback for development
-    const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAILS 
-      ? process.env.NEXT_PUBLIC_ADMIN_EMAILS.split(',').map(e => e.trim())
-      : ['admin@econindicatordaily.com', 'dev@econindicatordaily.com'];
-    return adminEmails.includes(email);
+  // Fetch admin stats when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchAdminStats();
+    }
+  }, [isAuthenticated]);
+
+  const checkAuthentication = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        setShowLogin(true);
+        setAuthLoading(false);
+        return;
+      }
+
+      // Verify token with backend
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data.role === 'admin') {
+          setIsAuthenticated(true);
+          setAdminUser(data.data);
+          setShowLogin(false);
+        } else {
+          // Not an admin or invalid token
+          localStorage.removeItem('adminToken');
+          localStorage.removeItem('adminRefreshToken');
+          setShowLogin(true);
+        }
+      } else if (response.status === 401) {
+        // Token expired, try to refresh
+        const refreshToken = localStorage.getItem('adminRefreshToken');
+        if (refreshToken) {
+          await attemptTokenRefresh(refreshToken);
+        } else {
+          setShowLogin(true);
+        }
+      } else {
+        setShowLogin(true);
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+      setShowLogin(true);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const attemptTokenRefresh = async (refreshToken: string) => {
+    try {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ refreshToken })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          localStorage.setItem('adminToken', data.data.token);
+          localStorage.setItem('adminRefreshToken', data.data.refreshToken);
+          setIsAuthenticated(true);
+          setAdminUser(data.data.user);
+          setShowLogin(false);
+          return;
+        }
+      }
+      
+      // Refresh failed
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminRefreshToken');
+      setShowLogin(true);
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      setShowLogin(true);
+    }
+  };
+
+  const handleLogin = (token: string, user: any) => {
+    setIsAuthenticated(true);
+    setAdminUser(user);
+    setShowLogin(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminRefreshToken');
+    setIsAuthenticated(false);
+    setAdminUser(null);
+    setShowLogin(true);
   };
 
   const fetchAdminStats = async () => {
     try {
       setLoading(true);
+      const token = localStorage.getItem('adminToken');
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_BASE_URL}/api/admin/stats`);
+      const response = await fetch(`${API_BASE_URL}/api/admin/stats`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
       
       if (data.success) {
@@ -115,9 +213,14 @@ export default function AdminDashboard() {
 
   const handleSyncAll = async () => {
     try {
+      const token = localStorage.getItem('adminToken');
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(`${API_BASE_URL}/api/admin/sync-all`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       const data = await response.json();
       
@@ -133,7 +236,8 @@ export default function AdminDashboard() {
     }
   };
 
-  if (status === 'loading' || !session) {
+  // Show loading screen while checking authentication
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
         <div className="text-center">
@@ -144,7 +248,20 @@ export default function AdminDashboard() {
     );
   }
 
-  if (!isAdminUser(session.user?.email || '')) {
+  // Show login modal if not authenticated
+  if (showLogin) {
+    return (
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+        <AdminLogin 
+          onLogin={handleLogin}
+          onCancel={() => router.push('/')}
+        />
+      </div>
+    );
+  }
+
+  // Show access denied if somehow not admin (fallback)
+  if (!isAuthenticated || !adminUser) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
         <div className="text-center">
@@ -173,6 +290,9 @@ export default function AdminDashboard() {
             </div>
             
             <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                Welcome, {adminUser?.name || adminUser?.email}
+              </div>
               <ThemeToggle />
               <button
                 onClick={handleSyncAll}
@@ -180,6 +300,13 @@ export default function AdminDashboard() {
               >
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Sync All
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Logout
               </button>
             </div>
           </div>
@@ -331,22 +458,35 @@ function OverviewTab({ stats, onRefresh }: { stats: AdminStats | null; onRefresh
   );
 }
 
-// Placeholder components for other tabs
+// Enhanced Users Tab Component
 function UsersTab() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchUsers();
-  }, [page]);
+    if (searchQuery.trim()) {
+      searchUsers();
+    } else {
+      fetchUsers();
+    }
+  }, [page, searchQuery]);
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
+      const token = localStorage.getItem('adminToken');
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_BASE_URL}/api/admin/users?page=${page}&limit=20`);
+      const response = await fetch(`${API_BASE_URL}/api/admin/users?page=${page}&limit=20`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
       
       if (data.success) {
@@ -360,12 +500,42 @@ function UsersTab() {
     }
   };
 
+  const searchUsers = async () => {
+    if (!searchQuery.trim()) {
+      fetchUsers();
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/admin/users/search/${encodeURIComponent(searchQuery)}?page=${page}&limit=20`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setUsers(data.data.users);
+        setTotalPages(data.data.pagination.totalPages);
+      }
+    } catch (error) {
+      console.error('Failed to search users:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateUserSubscription = async (userId: string, subscriptionTier: 'free' | 'pro') => {
     try {
+      const token = localStorage.getItem('adminToken');
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/subscription`, {
         method: 'PATCH',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ subscriptionTier }),
@@ -373,10 +543,51 @@ function UsersTab() {
       const data = await response.json();
       
       if (data.success) {
-        fetchUsers(); // Refresh the list
+        fetchUsers();
       }
     } catch (error) {
       console.error('Failed to update user subscription:', error);
+    }
+  };
+
+  const viewUserDetails = async (userId: string) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setSelectedUser(data.data);
+        setShowUserModal(true);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user details:', error);
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setShowDeleteConfirm(null);
+        fetchUsers();
+      }
+    } catch (error) {
+      console.error('Failed to delete user:', error);
     }
   };
 
@@ -390,15 +601,52 @@ function UsersTab() {
 
   return (
     <div className="space-y-6">
+      {/* Search and Controls */}
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">User Management</h3>
+          <div className="flex items-center space-x-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
+                className="w-64 px-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setPage(1);
+                  }}
+                  className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <button
+              onClick={fetchUsers}
+              className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </button>
+          </div>
+        </div>
+        {searchQuery && (
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+            Search results for "{searchQuery}" - {users.length} users found
+          </p>
+        )}
+      </div>
+
       {/* Users Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">User Management</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Showing {users.length} users (Page {page} of {totalPages})
-          </p>
-        </div>
-        
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
@@ -408,6 +656,9 @@ function UsersTab() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Subscription
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Favorites
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Joined
@@ -437,20 +688,30 @@ function UsersTab() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      user.subscriptionTier === 'pro'
-                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                    }`}>
-                      {user.subscriptionTier === 'pro' ? (
-                        <>
-                          <Crown className="w-3 h-3 mr-1" />
-                          Pro
-                        </>
-                      ) : (
-                        'Free'
+                    <div className="flex flex-col space-y-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        user.subscriptionTier === 'pro'
+                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                      }`}>
+                        {user.subscriptionTier === 'pro' ? (
+                          <>
+                            <Crown className="w-3 h-3 mr-1" />
+                            Pro
+                          </>
+                        ) : (
+                          'Free'
+                        )}
+                      </span>
+                      {user.subscriptionStatus && user.subscriptionStatus !== 'active' && (
+                        <span className="text-xs text-red-600 dark:text-red-400">
+                          {user.subscriptionStatus}
+                        </span>
                       )}
-                    </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                    {user._count?.preferences || 0}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {new Date(user.createdAt).toLocaleDateString()}
@@ -459,18 +720,19 @@ function UsersTab() {
                     {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString() : 'Never'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center text-sm ${
-                      user.isActive ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {user.isActive ? (
-                        <CheckCircle className="w-4 h-4 mr-1" />
-                      ) : (
-                        <AlertTriangle className="w-4 h-4 mr-1" />
-                      )}
-                      {user.isActive ? 'Active' : 'Inactive'}
+                    <span className="inline-flex items-center text-sm text-green-600">
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      Active
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                    <button
+                      onClick={() => viewUserDetails(user.id)}
+                      className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200 transition-colors"
+                    >
+                      <Eye className="w-3 h-3 mr-1" />
+                      View
+                    </button>
                     <button
                       onClick={() => updateUserSubscription(
                         user.id,
@@ -483,6 +745,12 @@ function UsersTab() {
                       }`}
                     >
                       {user.subscriptionTier === 'pro' ? 'Downgrade' : 'Upgrade'}
+                    </button>
+                    <button
+                      onClick={() => setShowDeleteConfirm(user.id)}
+                      className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200 transition-colors"
+                    >
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -513,6 +781,312 @@ function UsersTab() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* User Details Modal */}
+      {showUserModal && selectedUser && (
+        <UserDetailsModal 
+          user={selectedUser} 
+          onClose={() => {
+            setShowUserModal(false);
+            setSelectedUser(null);
+          }}
+          onUpdate={fetchUsers}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Confirm Delete</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Are you sure you want to delete this user? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteUser(showDeleteConfirm)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Delete User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// User Details Modal Component
+function UserDetailsModal({ user, onClose, onUpdate }: { user: any, onClose: () => void, onUpdate: () => void }) {
+  const [favorites, setFavorites] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState({
+    name: user.name || '',
+    email: user.email || '',
+    subscriptionTier: user.subscriptionTier || 'free',
+    subscriptionStatus: user.subscriptionStatus || 'active'
+  });
+
+  useEffect(() => {
+    fetchUserFavorites();
+  }, []);
+
+  const fetchUserFavorites = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/admin/users/${user.id}/favorites`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setFavorites(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user favorites:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateUser = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${API_BASE_URL}/api/admin/users/${user.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(editData)
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setEditing(false);
+        onUpdate();
+        onClose();
+      }
+    } catch (error) {
+      console.error('Failed to update user:', error);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">User Details</h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* User Information */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Name
+              </label>
+              {editing ? (
+                <input
+                  type="text"
+                  value={editData.name}
+                  onChange={(e) => setEditData(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              ) : (
+                <p className="text-gray-900 dark:text-white">{user.name || 'Unknown'}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Email
+              </label>
+              {editing ? (
+                <input
+                  type="email"
+                  value={editData.email}
+                  onChange={(e) => setEditData(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              ) : (
+                <p className="text-gray-900 dark:text-white">{user.email}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Subscription Tier
+              </label>
+              {editing ? (
+                <select
+                  value={editData.subscriptionTier}
+                  onChange={(e) => setEditData(prev => ({ ...prev, subscriptionTier: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="free">Free</option>
+                  <option value="pro">Pro</option>
+                </select>
+              ) : (
+                <div className="flex items-center">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    user.subscriptionTier === 'pro'
+                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                  }`}>
+                    {user.subscriptionTier === 'pro' ? (
+                      <>
+                        <Crown className="w-3 h-3 mr-1" />
+                        Pro
+                      </>
+                    ) : (
+                      'Free'
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Subscription Status
+              </label>
+              {editing ? (
+                <select
+                  value={editData.subscriptionStatus}
+                  onChange={(e) => setEditData(prev => ({ ...prev, subscriptionStatus: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  <option value="active">Active</option>
+                  <option value="canceled">Canceled</option>
+                  <option value="past_due">Past Due</option>
+                  <option value="incomplete">Incomplete</option>
+                </select>
+              ) : (
+                <p className="text-gray-900 dark:text-white capitalize">{user.subscriptionStatus || 'active'}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Account Created
+              </label>
+              <p className="text-gray-900 dark:text-white">{new Date(user.createdAt).toLocaleString()}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Last Login
+              </label>
+              <p className="text-gray-900 dark:text-white">
+                {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : 'Never'}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Total Favorites
+              </label>
+              <p className="text-gray-900 dark:text-white">{user._count?.preferences || 0}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Email Verified
+              </label>
+              <p className="text-gray-900 dark:text-white">
+                {user.emailVerified ? (
+                  <span className="text-green-600">✓ Verified</span>
+                ) : (
+                  <span className="text-red-600">✗ Not Verified</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {/* User Favorites */}
+          <div>
+            <h4 className="text-md font-semibold text-gray-900 dark:text-white mb-3">Favorite Indicators</h4>
+            {loading ? (
+              <div className="flex justify-center py-4">
+                <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
+              </div>
+            ) : favorites.length > 0 ? (
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {favorites.map((favorite) => (
+                  <div key={favorite.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {favorite.indicator.name}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {favorite.indicator.category} • {favorite.indicator.source}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Added {new Date(favorite.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 dark:text-gray-400 text-sm">No favorite indicators</p>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            Close
+          </button>
+          {editing ? (
+            <>
+              <button
+                onClick={() => setEditing(false)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={updateUser}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Save Changes
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setEditing(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Edit User
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

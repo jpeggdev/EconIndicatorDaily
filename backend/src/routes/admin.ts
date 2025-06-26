@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { IndicatorService } from '../services/indicatorService';
 import { env } from '../utils/env';
@@ -73,11 +73,7 @@ router.get('/users', requireAdmin, async (req, res) => {
     const users = await prisma.user.findMany({
       where: {
         // Exclude soft-deleted users
-        email: {
-          not: {
-            startsWith: 'deleted_'
-          }
-        }
+        deletedAt: null
       },
       skip: offset,
       take: limit,
@@ -100,11 +96,7 @@ router.get('/users', requireAdmin, async (req, res) => {
 
     const totalUsers = await prisma.user.count({
       where: {
-        email: {
-          not: {
-            startsWith: 'deleted_'
-          }
-        }
+        deletedAt: null
       }
     });
 
@@ -130,17 +122,16 @@ router.get('/users', requireAdmin, async (req, res) => {
 });
 
 // Update user subscription
-router.patch('/users/:userId/subscription', requireAdmin, async (req: any, res: any) => {
+router.patch('/users/:userId/subscription', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const { subscriptionTier } = req.body;
 
     if (!['free', 'pro'].includes(subscriptionTier)) {
-      res.status(400).json({
+      return res.status(400).json({
         success: false,
         error: 'Invalid subscription tier'
       });
-      return;
     }
 
     const user = await prisma.user.update({
@@ -153,7 +144,7 @@ router.patch('/users/:userId/subscription', requireAdmin, async (req: any, res: 
       }
     });
 
-    res.json({
+    return res.json({
       success: true,
       data: user
     });
@@ -214,12 +205,12 @@ router.get('/users/:userId', requireAdmin, async (req, res) => {
 });
 
 // Update user details
-router.patch('/users/:userId', requireAdmin, async (req: any, res: any) => {
+router.patch('/users/:userId', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const { name, email, subscriptionTier, subscriptionStatus } = req.body;
 
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
     if (name !== undefined) updateData.name = name;
     if (email !== undefined) updateData.email = email;
     if (subscriptionTier !== undefined) {
@@ -270,7 +261,7 @@ router.patch('/users/:userId', requireAdmin, async (req: any, res: any) => {
 });
 
 // Delete user (soft delete by setting email to deleted state)
-router.delete('/users/:userId', requireAdmin, async (req: any, res: any) => {
+router.delete('/users/:userId', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
 
@@ -288,15 +279,11 @@ router.delete('/users/:userId', requireAdmin, async (req: any, res: any) => {
       return;
     }
 
-    // Soft delete by updating email and marking as deleted
-    const timestamp = Date.now();
+    // Soft delete by setting deletedAt timestamp
     await prisma.user.update({
       where: { id: userId },
       data: {
-        email: `deleted_${timestamp}_${existingUser.email}`,
-        name: 'Deleted User',
-        subscriptionTier: 'free',
-        subscriptionStatus: 'canceled'
+        deletedAt: new Date()
       }
     });
 
@@ -341,11 +328,7 @@ router.get('/users/search/:query', requireAdmin, async (req, res) => {
           }
         ],
         // Exclude soft-deleted users
-        email: {
-          not: {
-            startsWith: 'deleted_'
-          }
-        }
+        deletedAt: null
       },
       skip: offset,
       take: limit,
@@ -375,11 +358,7 @@ router.get('/users/search/:query', requireAdmin, async (req, res) => {
             }
           }
         ],
-        email: {
-          not: {
-            startsWith: 'deleted_'
-          }
-        }
+        deletedAt: null
       }
     });
 
@@ -460,14 +439,14 @@ router.get('/indicators', requireAdmin, async (req, res) => {
     });
 
     // Group by source
-    const bySource = indicators.reduce((acc: any, indicator) => {
+    const bySource = indicators.reduce((acc: Record<string, typeof indicators>, indicator) => {
       const source = indicator.source || 'unknown';
       if (!acc[source]) {
         acc[source] = [];
       }
       acc[source].push(indicator);
       return acc;
-    }, {});
+    }, {} as Record<string, typeof indicators>);
 
     res.json({
       success: true,
@@ -476,7 +455,7 @@ router.get('/indicators', requireAdmin, async (req, res) => {
         bySource,
         summary: {
           total: indicators.length,
-          active: indicators.filter((i: any) => i.isActive).length,
+          active: indicators.filter((i) => i.isActive).length,
           withData: indicators.length, // Mock for now since we don't have latestValue
         }
       }
@@ -491,7 +470,7 @@ router.get('/indicators', requireAdmin, async (req, res) => {
 });
 
 // Toggle indicator active status
-router.patch('/indicators/:indicatorId/toggle', requireAdmin, async (req: any, res: any) => {
+router.patch('/indicators/:indicatorId/toggle', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { indicatorId } = req.params;
 
@@ -532,7 +511,7 @@ router.patch('/indicators/:indicatorId/toggle', requireAdmin, async (req: any, r
 });
 
 // Force sync specific indicator
-router.post('/indicators/:indicatorId/sync', requireAdmin, async (req: any, res: any) => {
+router.post('/indicators/:indicatorId/sync', requireAdmin, async (req: Request, res: Response) => {
   try {
     const { indicatorId } = req.params;
 
@@ -619,13 +598,13 @@ router.get('/sync-status', requireAdmin, async (req, res) => {
 
     // Calculate summary statistics
     const now = new Date();
-    const recentlyUpdated = status.filter((s: any) => {
+    const recentlyUpdated = status.filter((s) => {
       if (!s.lastUpdate) return false;
       const hoursSince = (now.getTime() - new Date(s.lastUpdate).getTime()) / (1000 * 60 * 60);
       return hoursSince < 24;
     });
 
-    const bySource = status.reduce((acc: any, item: any) => {
+    const bySource = status.reduce((acc: Record<string, { total: number; withData: number; recentlyUpdated: number }>, item) => {
       const source = item.source || 'unknown';
       if (!acc[source]) {
         acc[source] = { total: 0, withData: 0, recentlyUpdated: 0 };
@@ -634,7 +613,7 @@ router.get('/sync-status', requireAdmin, async (req, res) => {
       if (item.totalDataPoints > 0) acc[source].withData++;
       if (recentlyUpdated.includes(item)) acc[source].recentlyUpdated++;
       return acc;
-    }, {});
+    }, {} as Record<string, { total: number; withData: number; recentlyUpdated: number }>);
 
     res.json({
       success: true,
@@ -642,7 +621,7 @@ router.get('/sync-status', requireAdmin, async (req, res) => {
         indicators: status,
         summary: {
           total: status.length,
-          withData: status.filter((s: any) => s.totalDataPoints > 0).length,
+          withData: status.filter((s) => s.totalDataPoints > 0).length,
           recentlyUpdated: recentlyUpdated.length,
           needingUpdate: status.length - recentlyUpdated.length
         },

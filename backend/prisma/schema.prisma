@@ -79,6 +79,7 @@ model User {
   dailyEmailEnabled Boolean @default(false)
   lastLoginAt DateTime?
   trialUsed Boolean @default(false)
+  deletedAt       DateTime? // For soft deletes
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Router, Request, Response, RequestHandler } from 'express';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -27,17 +26,7 @@ const adminLoginHandler = async (req: Request, res: Response) => {
       });
     }
 
-    // Check if email is in admin list
-    if (!JWTUtils.isAdminEmail(email)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized for admin access',
-        code: 'NOT_ADMIN'
-      });
-    }
-
-    // For development, allow simple password
-    // Validate admin password using secure database lookup
+    // Validate admin password using secure database lookup first
     const validPassword = await validateAdminPassword(email, password);
 
     if (!validPassword) {
@@ -48,32 +37,35 @@ const adminLoginHandler = async (req: Request, res: Response) => {
       });
     }
 
-    // Find or create user record
-    let user = await userService.getUserByEmail(email);
-    if (!user) {
-      user = await userService.createUser({
-        email,
-        name: email.split('@')[0], // Use email prefix as name
+    // Get the validated admin user from database
+    const adminUser = await prisma.user.findFirst({
+      where: {
+        email: email,
+        role: 'admin'
+      }
+    });
+
+    if (!adminUser) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid credentials',
+        code: 'INVALID_CREDENTIALS'
       });
     }
 
+
+    // Find existing admin user - SECURITY: Admin users must already exist in database
+    const user = await userService.getUserByEmail(email);
     if (!user) {
-      return res.status(500).json({
+      return res.status(401).json({
         success: false,
-        error: 'Failed to create user',
-        code: 'USER_CREATION_FAILED'
+        error: 'Invalid credentials',
+        code: 'INVALID_CREDENTIALS'
       });
     }
 
-    // Generate admin token
-    const adminLevel = JWTUtils.getAdminLevel(email);
-    if (!adminLevel) {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized for admin access',
-        code: 'NOT_ADMIN'
-      });
-    }
+    // Generate admin token - Use 'super' level for all database-verified admins
+    const adminLevel = 'super';
 
     const token = JWTUtils.generateAdminToken({
       userId: user.id,
@@ -99,7 +91,7 @@ const adminLoginHandler = async (req: Request, res: Response) => {
           email: user.email,
           name: user.name,
           role: 'admin',
-          adminLevel: JWTUtils.getAdminLevel(email)
+          adminLevel: 'super'
         },
         expiresIn: '1h'
       }
@@ -213,16 +205,16 @@ const refreshHandler = async (req: Request, res: Response) => {
       });
     }
 
-    // Generate new tokens
-    const isAdmin = JWTUtils.isAdminEmail(user.email);
-    const adminLevel = isAdmin ? JWTUtils.getAdminLevel(user.email) : null;
+    // Generate new tokens based on database role
+    const isAdmin = user.role === 'admin';
+    const adminLevel = isAdmin ? 'super' : null;
     
-    const newToken = isAdmin && adminLevel
+    const newToken = isAdmin
       ? JWTUtils.generateAdminToken({
           userId: user.id,
           email: user.email,
           role: 'admin',
-          adminLevel: adminLevel
+          adminLevel: 'super'
         })
       : JWTUtils.generateToken({
           userId: user.id,
@@ -233,7 +225,7 @@ const refreshHandler = async (req: Request, res: Response) => {
     const newRefreshToken = JWTUtils.generateRefreshToken({
       userId: user.id,
       email: user.email,
-      role: isAdmin && adminLevel ? 'admin' : 'user'
+      role: isAdmin ? 'admin' : 'user'
     });
 
     res.json({
@@ -245,7 +237,7 @@ const refreshHandler = async (req: Request, res: Response) => {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: isAdmin && adminLevel ? 'admin' : 'user',
+          role: isAdmin ? 'admin' : 'user',
           subscriptionTier: user.subscriptionTier,
           subscriptionStatus: user.subscriptionStatus
         },
@@ -312,7 +304,7 @@ const meHandler = async (req: Request, res: Response) => {
       });
     }
 
-    const isAdmin = JWTUtils.isAdminEmail(user.email);
+    const isAdmin = user.role === 'admin';
 
     res.json({
       success: true,
@@ -323,7 +315,7 @@ const meHandler = async (req: Request, res: Response) => {
         role: isAdmin ? 'admin' : 'user',
         subscriptionTier: user.subscriptionTier,
         subscriptionStatus: user.subscriptionStatus,
-        adminLevel: isAdmin ? JWTUtils.getAdminLevel(user.email) : undefined
+        adminLevel: isAdmin ? 'super' : undefined
       }
     });
 
@@ -349,11 +341,7 @@ async function validateAdminPassword(email: string, password: string): Promise<b
     const adminUser = await prisma.user.findFirst({
       where: {
         email: email,
-        // Only check users with admin role
-        OR: [
-          { role: 'admin' },
-          { email: { in: JWTUtils.getAdminEmails() } }
-        ]
+        role: 'admin'
       },
       select: {
         id: true,
