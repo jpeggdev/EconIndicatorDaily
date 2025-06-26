@@ -46,7 +46,10 @@ export default function AccessControl({
             This feature is only available for Pro subscribers.
           </p>
           {showUpgrade && (
-            <button className="px-6 py-2 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600 transition-colors">
+            <button 
+              onClick={() => window.open('/upgrade', '_blank')}
+              className="px-6 py-2 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600 transition-colors"
+            >
               Upgrade to Pro
             </button>
           )}
@@ -69,7 +72,10 @@ export default function AccessControl({
             Upgrade to Pro to access 50+ indicators and unlimited insights!
           </p>
           {showUpgrade && (
-            <button className="px-6 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors">
+            <button 
+              onClick={() => window.open('/upgrade', '_blank')}
+              className="px-6 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors"
+            >
               Upgrade to Pro
             </button>
           )}

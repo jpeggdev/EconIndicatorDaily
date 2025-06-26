@@ -47,12 +47,38 @@ export class FredService {
 }
 
 export const coreIndicators = [
+  // Weekly indicators (highest frequency for free users)
   {
-    seriesId: 'GDP',
-    name: 'Gross Domestic Product',
-    category: 'economic_growth',
-    frequency: 'quarterly'
+    seriesId: 'ICSA',
+    name: 'Initial Claims',
+    category: 'employment',
+    frequency: 'weekly'
   },
+  {
+    seriesId: 'CCSA',
+    name: 'Continuing Claims',
+    category: 'employment',
+    frequency: 'weekly'
+  },
+  {
+    seriesId: 'CPFF',
+    name: 'Commercial Paper Outstanding',
+    category: 'monetary_policy',
+    frequency: 'weekly'
+  },
+  {
+    seriesId: 'TOTBKCR',
+    name: 'Assets of Commercial Banks',
+    category: 'monetary_policy',
+    frequency: 'weekly'
+  },
+  {
+    seriesId: 'HOUST',
+    name: 'Housing Starts',
+    category: 'housing',
+    frequency: 'monthly'
+  },
+  // Monthly indicators
   {
     seriesId: 'UNRATE',
     name: 'Unemployment Rate',
@@ -76,5 +102,12 @@ export const coreIndicators = [
     name: 'Nonfarm Payrolls',
     category: 'employment',
     frequency: 'monthly'
+  },
+  // Quarterly indicators
+  {
+    seriesId: 'GDP',
+    name: 'Gross Domestic Product',
+    category: 'economic_growth',
+    frequency: 'quarterly'
   }
 ];

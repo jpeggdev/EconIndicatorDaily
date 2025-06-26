@@ -3,29 +3,70 @@
 import { useState, useEffect } from 'react';
 import { EconomicIndicator } from '@/types/indicator';
 import IndicatorCard from './IndicatorCard';
+import IndicatorDetailModal from './IndicatorDetailModal';
 import AccessControl, { useAccessControl } from './AccessControl';
-import { RefreshCw, Crown, Shield } from 'lucide-react';
+import { RefreshCw, Crown, Shield, Filter, X } from 'lucide-react';
 import AuthButton from './AuthButton';
 import SubscriptionBanner from './SubscriptionBanner';
+import FilterPanel from './FilterPanel';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+interface FilterState {
+  categories: string[]
+  sources: string[]
+  frequencies: string[]
+  showFavoritesOnly: boolean
+}
+
 export default function Dashboard() {
   const [indicators, setIndicators] = useState<EconomicIndicator[]>([]);
+  const [filteredIndicators, setFilteredIndicators] = useState<EconomicIndicator[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [selectedIndicator, setSelectedIndicator] = useState<EconomicIndicator | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<FilterState>({
+    categories: [],
+    sources: [],
+    frequencies: [],
+    showFavoritesOnly: false
+  });
   
   const { checkAccess, isProUser, maxIndicators, session } = useAccessControl();
 
-  const fetchIndicators = async () => {
+  const fetchIndicators = async (filters?: FilterState) => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/indicators`);
+      
+      // Build query parameters for filtering
+      const params = new URLSearchParams();
+      const currentFilters = filters || activeFilters;
+      
+      if (currentFilters.categories.length > 0) {
+        params.append('categories', currentFilters.categories.join(','));
+      }
+      if (currentFilters.sources.length > 0) {
+        params.append('sources', currentFilters.sources.join(','));
+      }
+      if (currentFilters.frequencies.length > 0) {
+        params.append('frequencies', currentFilters.frequencies.join(','));
+      }
+      if (currentFilters.showFavoritesOnly) {
+        params.append('favoritesOnly', 'true');
+      }
+      
+      const queryString = params.toString();
+      const url = `${API_BASE_URL}/api/indicators${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await fetch(url);
       const data = await response.json();
       
       if (data.success) {
         setIndicators(data.data);
+        setFilteredIndicators(data.data);
         setError(null);
       } else {
         setError('Failed to fetch indicators');
@@ -58,6 +99,40 @@ export default function Dashboard() {
       setSyncing(false);
     }
   };
+
+  const handleCardClick = (indicator: EconomicIndicator) => {
+    setSelectedIndicator(indicator);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedIndicator(null);
+  };
+
+  const handleFiltersChange = (filters: FilterState) => {
+    setActiveFilters(filters);
+    fetchIndicators(filters);
+  };
+
+  const handleFavoriteChange = (indicatorId: string, isFavorite: boolean) => {
+    // Update local state immediately for optimistic UI
+    setIndicators(prev => prev.map(indicator => 
+      indicator.id === indicatorId 
+        ? { ...indicator, isFavorite }
+        : indicator
+    ));
+    setFilteredIndicators(prev => prev.map(indicator => 
+      indicator.id === indicatorId 
+        ? { ...indicator, isFavorite }
+        : indicator
+    ));
+  };
+
+  const hasActiveFilters = activeFilters.categories.length > 0 || 
+                          activeFilters.sources.length > 0 || 
+                          activeFilters.frequencies.length > 0 || 
+                          activeFilters.showFavoritesOnly;
 
   useEffect(() => {
     fetchIndicators();
@@ -108,6 +183,24 @@ export default function Dashboard() {
             
             <div className="flex items-center space-x-4">
               <button
+                onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+                className={`group relative inline-flex items-center px-4 py-3 ${
+                  hasActiveFilters 
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-600' 
+                    : 'bg-white/80 text-gray-700 hover:bg-white'
+                } ${hasActiveFilters ? 'text-white' : ''} font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105`}
+              >
+                <Filter className="w-5 h-5 mr-2" />
+                <span>Filter</span>
+                {hasActiveFilters && (
+                  <div className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                    <span className="text-xs text-white font-bold">
+                      {[activeFilters.categories, activeFilters.sources, activeFilters.frequencies].flat().length + (activeFilters.showFavoritesOnly ? 1 : 0)}
+                    </span>
+                  </div>
+                )}
+              </button>
+              <button
                 onClick={syncIndicators}
                 disabled={syncing}
                 className="group relative inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105"
@@ -122,12 +215,22 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Floating background elements */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-r from-blue-400/10 to-purple-400/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-r from-emerald-400/10 to-blue-400/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        </div>
+      <div className="flex">
+        {/* Filter Panel */}
+        <FilterPanel 
+          isOpen={isFilterPanelOpen}
+          onClose={() => setIsFilterPanelOpen(false)}
+          onFiltersChange={handleFiltersChange}
+        />
+
+        {/* Main Content */}
+        <main className={`flex-1 transition-all duration-300 ${isFilterPanelOpen ? 'lg:ml-0' : ''}`}>
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            {/* Floating background elements */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-r from-blue-400/10 to-purple-400/10 rounded-full blur-3xl animate-pulse"></div>
+              <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-r from-emerald-400/10 to-blue-400/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+            </div>
 
         {error && (
           <div className="relative mb-8 bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-xl p-6 shadow-lg">
@@ -169,14 +272,16 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 border border-white/40 shadow-lg">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-900">{indicators.length}</div>
-                  <div className="text-sm text-gray-600">Total Indicators</div>
+                  <div className="text-2xl font-bold text-gray-900">{filteredIndicators.length}</div>
+                  <div className="text-sm text-gray-600">
+                    {hasActiveFilters ? 'Filtered' : 'Total'} Indicators
+                  </div>
                 </div>
               </div>
               <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 border border-white/40 shadow-lg">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {indicators.filter(i => i.latestValue !== null).length}
+                    {filteredIndicators.filter(i => i.latestValue !== null).length}
                   </div>
                   <div className="text-sm text-gray-600">Live Data</div>
                 </div>
@@ -216,25 +321,63 @@ export default function Dashboard() {
 
             {/* Indicators grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-              {indicators.map((indicator, index) => (
+              {filteredIndicators.slice(0, maxIndicators).map((indicator, index) => (
                   <div
                     key={indicator.id}
                     className="animate-fade-in-up"
                     style={{ animationDelay: `${index * 100}ms` }}
                   >
-                    <AccessControl
-                      requiredIndicatorCount={index + 1}
-                      showUpgrade={true}
-                    >
-                      <IndicatorCard indicator={indicator} />
-                    </AccessControl>
+                    <IndicatorCard 
+                      indicator={indicator} 
+                      onCardClick={handleCardClick}
+                      onFavoriteChange={handleFavoriteChange}
+                    />
                   </div>
                 )
-              ))}
+              )}
+              
+              {/* Show subtle upgrade card only for free users who have more indicators available */}
+              {!isProUser && indicators.length > maxIndicators && (
+                <div 
+                  className="animate-fade-in-up"
+                  style={{ animationDelay: `${maxIndicators * 100}ms` }}
+                >
+                  <div className="group relative h-full p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/50 hover:border-blue-300/70 transition-all duration-300 hover:shadow-lg">
+                    <div className="text-center space-y-4">
+                      <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto">
+                        <Crown className="w-8 h-8 text-white" />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-lg font-semibold text-gray-800">
+                          Unlock {indicators.length - maxIndicators} More Indicators
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Get access to market data, advanced analytics, and daily insights
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => window.open('/upgrade', '_blank')}
+                        className="w-full px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 hover:scale-105"
+                      >
+                        Upgrade to Pro
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
-      </main>
+          </div>
+        </main>
+      </div>
+
+      {/* Detail Modal */}
+      <IndicatorDetailModal
+        indicator={selectedIndicator}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
     </div>
   );
 }

@@ -22,6 +22,8 @@ model EconomicIndicator {
   data IndicatorData[]
   explanations IndicatorExplanation[]
   userPreferences UserPreference[]
+  correlationsAsIndicator1 IndicatorCorrelation[] @relation("Indicator1Correlations")
+  correlationsAsIndicator2 IndicatorCorrelation[] @relation("Indicator2Correlations")
 
   @@map("economic_indicators")
 }
@@ -62,6 +64,8 @@ model User {
   name            String?
   image           String?
   emailVerified   DateTime?
+  role            String @default("user") // user, admin
+  passwordHash    String? // For admin users
   subscriptionStatus String @default("free") // free, pro, enterprise
   subscriptionTier String @default("free") // free, pro, enterprise
   stripeCustomerId String?
@@ -81,6 +85,7 @@ model User {
   accounts Account[]
   sessions Session[]
   preferences UserPreference[]
+  dashboardFilter UserDashboardFilter?
 
   @@map("users")
 }
@@ -129,15 +134,34 @@ model UserPreference {
   id          String @id @default(cuid())
   userId      String
   indicatorId String
+  isFavorite  Boolean @default(false)
   alertEnabled Boolean @default(false)
   alertThreshold Float?
+  displayOrder Int? // Custom ordering for favorites
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
   indicator EconomicIndicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
 
   @@unique([userId, indicatorId])
   @@map("user_preferences")
+}
+
+model UserDashboardFilter {
+  id          String @id @default(cuid())
+  userId      String
+  categories  String? // JSON string of categories to show
+  sources     String? // JSON string of sources to show
+  frequencies String? // JSON string of frequencies to show
+  showFavoritesOnly Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("user_dashboard_filters")
 }
 
 model ApiRateLimit {
@@ -162,4 +186,33 @@ model ContentTemplate {
   updatedAt DateTime @updatedAt
 
   @@map("content_templates")
+}
+
+model AnalyticsResult {
+  id             String @id @default(cuid())
+  engineType     String
+  calculationDate DateTime
+  score          Float
+  confidence     Float
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([engineType, calculationDate])
+  @@map("analytics_results")
+}
+
+model IndicatorCorrelation {
+  id                     String @id @default(cuid())
+  indicator1Id           String
+  indicator2Id           String
+  correlationCoefficient Float
+  windowDays             Int
+  calculationDate        DateTime
+  createdAt              DateTime @default(now())
+
+  indicator1 EconomicIndicator @relation("Indicator1Correlations", fields: [indicator1Id], references: [id], onDelete: Cascade)
+  indicator2 EconomicIndicator @relation("Indicator2Correlations", fields: [indicator2Id], references: [id], onDelete: Cascade)
+
+  @@unique([indicator1Id, indicator2Id, windowDays, calculationDate])
+  @@map("indicator_correlations")
 }

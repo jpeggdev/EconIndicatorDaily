@@ -5,8 +5,10 @@ export interface EconomicIndicator {
   category: string;
   frequency: string;
   unit: string | null;
+  source: string;
   latestValue: number | null;
   latestDate: string | null;
+  isFavorite?: boolean;
 }
 
 export interface IndicatorData {

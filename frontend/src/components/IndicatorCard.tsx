@@ -1,30 +1,19 @@
 import { EconomicIndicator } from '@/types/indicator';
-import { TrendingUp, TrendingDown, Activity, DollarSign, Users, PieChart, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, Users, PieChart, Zap, BarChart3, Calendar, Source } from 'lucide-react';
+import { formatNumberWithUnit } from '@/lib/formatNumber';
+import { useState } from 'react';
+import FavoriteButton from './FavoriteButton';
 
 interface IndicatorCardProps {
   indicator: EconomicIndicator;
+  onCardClick?: (indicator: EconomicIndicator) => void;
+  onFavoriteChange?: (indicatorId: string, isFavorite: boolean) => void;
 }
 
-export default function IndicatorCard({ indicator }: IndicatorCardProps) {
+export default function IndicatorCard({ indicator, onCardClick, onFavoriteChange }: IndicatorCardProps) {
+  const [isHovered, setIsHovered] = useState(false);
   const formatValue = (value: number | null, unit: string | null) => {
-    if (value === null) return 'N/A';
-    
-    if (unit?.includes('%') || unit?.includes('Percent')) {
-      return `${value.toFixed(1)}%`;
-    }
-    
-    if (unit?.includes('$') || unit?.includes('Billion')) {
-      if (value >= 1000) {
-        return `$${(value / 1000).toFixed(1)}T`;
-      }
-      return `$${value.toLocaleString()}B`;
-    }
-    
-    if (value >= 1000000) {
-      return `${(value / 1000).toFixed(0)}K`;
-    }
-    
-    return value.toLocaleString();
+    return formatNumberWithUnit(value as number, unit);
   };
 
   const formatDate = (dateString: string | null) => {
@@ -111,8 +100,23 @@ export default function IndicatorCard({ indicator }: IndicatorCardProps) {
   const trend = getTrendIndicator();
   const TrendIcon = trend.icon;
 
+  const handleCardClick = () => {
+    if (onCardClick) {
+      onCardClick(indicator);
+    }
+  };
+
   return (
-    <div className={`${config.bgColor} rounded-xl shadow-lg p-6 hover:shadow-xl transition-all duration-300 hover:scale-105 border border-white/50 backdrop-blur-sm relative overflow-hidden group`}>
+    <div 
+      className={`${config.bgColor} rounded-xl shadow-lg p-6 border border-white/50 backdrop-blur-sm relative overflow-hidden group cursor-pointer transform transition-all duration-500 ease-out ${
+        isHovered 
+          ? 'shadow-2xl scale-105 -translate-y-2 bg-white/90' 
+          : 'hover:shadow-xl hover:scale-102 hover:-translate-y-1'
+      }`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={handleCardClick}
+    >
       {/* Background decoration */}
       <div className={`absolute inset-0 bg-gradient-to-r ${config.color} opacity-5 group-hover:opacity-10 transition-opacity`}></div>
       
@@ -125,6 +129,12 @@ export default function IndicatorCard({ indicator }: IndicatorCardProps) {
               <h3 className="text-lg font-bold text-gray-900 group-hover:text-gray-800 transition-colors">
                 {indicator.name}
               </h3>
+              <FavoriteButton 
+                indicatorId={indicator.id}
+                isFavorite={indicator.isFavorite || false}
+                onToggle={(isFavorite) => onFavoriteChange?.(indicator.id, isFavorite)}
+                size="sm"
+              />
             </div>
             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${config.badgeColor}`}>
               <IconComponent className="w-3 h-3 mr-1" />

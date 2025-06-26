@@ -50,15 +50,19 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    jwt: async ({ token, user }) => {
+    jwt: async ({ token, user, trigger }) => {
+      // Set basic user info on initial sign-in
       if (user) {
         token.uid = user.id;
         token.email = user.email;
         token.name = user.name;
-        
-        // Fetch fresh subscription data from backend
+      }
+      
+      // Always fetch fresh subscription data when JWT is updated
+      // This includes initial sign-in and manual session updates
+      if (token.uid) {
         try {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/subscription/${user.id}`);
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/users/subscription/${token.uid}`);
           if (response.ok) {
             const data = await response.json();
             if (data.success) {
@@ -69,9 +73,15 @@ export const authOptions: NextAuthOptions = {
           }
         } catch (error) {
           console.error('Error fetching subscription data:', error);
-          token.subscriptionStatus = 'free';
+          // Keep existing values if fetch fails, don't reset to free
+          if (!token.subscriptionStatus) {
+            token.subscriptionStatus = 'free';
+            token.subscriptionTier = 'free';
+            token.maxIndicators = 5;
+          }
         }
       }
+      
       return token;
     },
     session: async ({ session, token }) => {

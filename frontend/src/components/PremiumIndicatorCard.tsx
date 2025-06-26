@@ -3,13 +3,15 @@
 import { EconomicIndicator } from '@/types/indicator';
 import { TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { formatNumberWithUnit } from '@/lib/formatNumber';
 
 interface PremiumIndicatorCardProps {
   indicator: EconomicIndicator;
   index: number;
+  onCardClick?: (indicator: EconomicIndicator) => void;
 }
 
-export default function PremiumIndicatorCard({ indicator, index }: PremiumIndicatorCardProps) {
+export default function PremiumIndicatorCard({ indicator, index, onCardClick }: PremiumIndicatorCardProps) {
   const value = indicator.latestValue;
   const isPositive = value !== null && value > 0;
   const isNegative = value !== null && value < 0;
@@ -54,14 +56,7 @@ export default function PremiumIndicatorCard({ indicator, index }: PremiumIndica
   const config = getCategoryConfig(indicator.category);
   
   const formatValue = (val: number | null) => {
-    if (val === null) return 'N/A';
-    if (Math.abs(val) >= 1000000) {
-      return `${(val / 1000000).toFixed(1)}M`;
-    }
-    if (Math.abs(val) >= 1000) {
-      return `${(val / 1000).toFixed(1)}K`;
-    }
-    return val.toFixed(2);
+    return formatNumberWithUnit(val as number, indicator.unit);
   };
 
   const getTrendIcon = () => {
@@ -90,7 +85,8 @@ export default function PremiumIndicatorCard({ indicator, index }: PremiumIndica
         scale: 1.02,
         boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
       }}
-      className="group relative overflow-hidden"
+      className="group relative overflow-hidden cursor-pointer"
+      onClick={() => onCardClick?.(indicator)}
     >
       {/* Main Card */}
       <div className="relative bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
@@ -133,11 +129,6 @@ export default function PremiumIndicatorCard({ indicator, index }: PremiumIndica
               <span className="text-4xl font-black text-gray-900 tracking-tight">
                 {formatValue(value)}
               </span>
-              {indicator.unit && (
-                <span className="text-lg font-bold text-gray-500 uppercase">
-                  {indicator.unit}
-                </span>
-              )}
             </div>
             
             {/* Last Updated */}

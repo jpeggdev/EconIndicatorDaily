@@ -20,6 +20,13 @@ export class UserService {
         indicatorAccessCount: 5,
         lastLoginAt: new Date(),
       },
+      include: {
+        preferences: {
+          include: {
+            indicator: true,
+          },
+        },
+      },
     });
   }
 

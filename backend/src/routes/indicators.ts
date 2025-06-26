@@ -7,16 +7,77 @@ const prisma = new PrismaClient();
 
 const getIndicatorService = (): IndicatorService => {
   const fredApiKey = process.env.FRED_API_KEY;
+  const alphaVantageApiKey = process.env.ALPHA_VANTAGE_API_KEY;
+  const blsApiKey = process.env.BLS_API_KEY;
+  const finnhubApiKey = process.env.FINNHUB_API_KEY; // Optional
+  const fmpApiKey = process.env.FINANCIAL_MODELING_PREP_API_KEY; // Optional
+  
   if (!fredApiKey) {
     throw new Error('FRED_API_KEY environment variable is required');
   }
-  return new IndicatorService(prisma, fredApiKey);
+  if (!alphaVantageApiKey) {
+    throw new Error('ALPHA_VANTAGE_API_KEY environment variable is required');
+  }
+  if (!blsApiKey) {
+    throw new Error('BLS_API_KEY environment variable is required');
+  }
+  
+  return new IndicatorService(prisma, fredApiKey, alphaVantageApiKey, blsApiKey, finnhubApiKey, fmpApiKey);
 };
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: any, res: any) => {
   try {
     const indicatorService = getIndicatorService();
-    const indicators = await indicatorService.getAllIndicators();
+    const userId = req.session?.user?.id;
+    
+    // Get query parameters for filtering
+    const { categories, sources, frequencies, favoritesOnly } = req.query;
+    
+    // Parse filter parameters
+    const categoryFilter = categories ? categories.split(',') : [];
+    const sourceFilter = sources ? sources.split(',') : [];
+    const frequencyFilter = frequencies ? frequencies.split(',') : [];
+    const showFavoritesOnly = favoritesOnly === 'true';
+    
+    // Build where clause for filtering
+    const whereClause: any = { isActive: true };
+    
+    if (categoryFilter.length > 0) {
+      whereClause.category = { in: categoryFilter };
+    }
+    if (sourceFilter.length > 0) {
+      whereClause.source = { in: sourceFilter };
+    }
+    if (frequencyFilter.length > 0) {
+      whereClause.frequency = { in: frequencyFilter };
+    }
+    
+    // If showing favorites only and user is authenticated
+    if (showFavoritesOnly && userId) {
+      whereClause.userPreferences = {
+        some: {
+          userId,
+          isFavorite: true
+        }
+      };
+    }
+    
+    const indicators = await prisma.economicIndicator.findMany({
+      where: whereClause,
+      include: {
+        data: {
+          orderBy: { date: 'desc' },
+          take: 1
+        },
+        userPreferences: userId ? {
+          where: { userId }
+        } : false
+      },
+      orderBy: [
+        { category: 'asc' },
+        { name: 'asc' }
+      ]
+    });
     
     res.json({
       success: true,
@@ -27,8 +88,10 @@ router.get('/', async (req, res) => {
         category: indicator.category,
         frequency: indicator.frequency,
         unit: indicator.unit,
+        source: indicator.source,
         latestValue: indicator.data[0]?.value || null,
-        latestDate: indicator.data[0]?.date || null
+        latestDate: indicator.data[0]?.date || null,
+        isFavorite: userId ? (indicator.userPreferences[0]?.isFavorite || false) : false
       }))
     });
   } catch (error) {
@@ -88,7 +151,33 @@ router.post('/sync', async (req, res) => {
     console.log('✓ Core indicators initialized successfully');
     
     // Sync data for each indicator
-    const indicators = ['Gross Domestic Product', 'Unemployment Rate', 'Consumer Price Index', 'Federal Funds Rate', 'Nonfarm Payrolls'];
+    const indicators = [
+      // Weekly indicators (highest priority for free users)
+      'Initial Claims',
+      'Continuing Claims', 
+      'Commercial Paper Outstanding',
+      'Assets of Commercial Banks',
+      // Monthly indicators
+      'Housing Starts',
+      'Unemployment Rate', 
+      'Consumer Price Index', 
+      'Federal Funds Rate', 
+      'Nonfarm Payrolls',
+      // Quarterly indicators
+      'Gross Domestic Product',
+      // Daily market indicators  
+      'SPDR S&P 500 ETF',
+      'Vanguard Total Stock Market ETF',
+      'Invesco QQQ ETF',
+      'SPDR Dow Jones Industrial Average ETF',
+      'iPath Series B S&P 500 VIX Short-Term Futures ETN',
+      // Annual World Bank indicators
+      'US GDP',
+      'US GDP per Capita',
+      'US Population',
+      'Government Debt to GDP',
+      'Foreign Direct Investment'
+    ];
     
     for (const indicator of indicators) {
       try {
