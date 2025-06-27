@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { 
@@ -18,7 +18,17 @@ import {
   CheckCircle,
   Clock,
   Crown,
-  LogOut
+  LogOut,
+  Mail,
+  Send,
+  MousePointer,
+  UserX,
+  ChevronDown,
+
+  Plus,
+  RotateCcw,
+  FileText,
+  Edit
 } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 import AdminLogin from '@/components/AdminLogin';
@@ -38,16 +48,55 @@ interface AdminStats {
   };
 }
 
+interface EmailMetrics {
+  totalSends: number;
+  sendsChange: number;
+  opens: number;
+  opensChange: number;
+  clicks: number;
+  clicksChange: number;
+  bounces: number;
+  bouncesChange: number;
+  unsubscribes: number;
+  unsubscribesChange: number;
+}
+
+interface EmailCampaign {
+  id: string;
+  name: string;
+}
+
+interface EmailContact {
+  id: number;
+  email: string;
+  status: 'clicked' | 'opened' | 'sent' | 'bounced';
+  lastActivity: string;
+}
+
+interface EmailTemplate {
+  id: number;
+  name: string;
+  lastModified: string;
+  thumbnail: string;
+}
+
+interface FunnelData {
+  label: string;
+  value: number;
+  percentage: number;
+  color: string;
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'indicators' | 'sync' | 'apis' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'indicators' | 'sync' | 'apis' | 'settings' | 'email-marketing'>('overview');
   
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
-  const [adminUser, setAdminUser] = useState<any>(null);
+  const [adminUser, setAdminUser] = useState<{id: string; email: string; name?: string} | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // Check authentication on mount
@@ -143,7 +192,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleLogin = (token: string, user: any) => {
+  const handleLogin = (token: string, user: {id: string; email: string; name?: string}) => {
     setIsAuthenticated(true);
     setAdminUser(user);
     setShowLogin(false);
@@ -323,11 +372,12 @@ export default function AdminDashboard() {
               { id: 'indicators', label: 'Indicators', icon: TrendingUp },
               { id: 'sync', label: 'Sync Status', icon: RefreshCw },
               { id: 'apis', label: 'API Status', icon: Database },
+              { id: 'email-marketing', label: 'Email Marketing', icon: Mail },
               { id: 'settings', label: 'Settings', icon: Settings },
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setActiveTab(tab.id as typeof activeTab)}
                 className={`flex items-center px-1 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600 dark:text-blue-400'
@@ -355,6 +405,7 @@ export default function AdminDashboard() {
             {activeTab === 'indicators' && <IndicatorsTab />}
             {activeTab === 'sync' && <SyncStatusTab />}
             {activeTab === 'apis' && <APIStatusTab stats={stats} />}
+            {activeTab === 'email-marketing' && <EmailMarketingTab />}
             {activeTab === 'settings' && <SettingsTab />}
           </>
         )}
@@ -459,13 +510,25 @@ function OverviewTab({ stats, onRefresh }: { stats: AdminStats | null; onRefresh
 }
 
 // Enhanced Users Tab Component
+interface UserData {
+  id: string;
+  email: string;
+  name?: string;
+  subscriptionTier: 'free' | 'pro';
+  subscriptionStatus?: string;
+  createdAt: string;
+  lastLoginAt?: string;
+  emailVerified?: boolean;
+  _count?: { preferences: number };
+}
+
 function UsersTab() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
@@ -475,7 +538,7 @@ function UsersTab() {
     } else {
       fetchUsers();
     }
-  }, [page, searchQuery]);
+  }, [page, searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchUsers = async () => {
     try {
@@ -640,7 +703,7 @@ function UsersTab() {
         </div>
         {searchQuery && (
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-            Search results for "{searchQuery}" - {users.length} users found
+            Search results for &quot;{searchQuery}&quot; - {users.length} users found
           </p>
         )}
       </div>
@@ -824,9 +887,19 @@ function UsersTab() {
   );
 }
 
-// User Details Modal Component
-function UserDetailsModal({ user, onClose, onUpdate }: { user: any, onClose: () => void, onUpdate: () => void }) {
-  const [favorites, setFavorites] = useState<any[]>([]);
+// User Details Modal Component  
+interface UserFavorite {
+  id: string;
+  createdAt: string;
+  indicator: {
+    name: string;
+    category: string;
+    source: string;
+  };
+}
+
+function UserDetailsModal({ user, onClose, onUpdate }: { user: UserData, onClose: () => void, onUpdate: () => void }) {
+  const [favorites, setFavorites] = useState<UserFavorite[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState({
@@ -838,7 +911,7 @@ function UserDetailsModal({ user, onClose, onUpdate }: { user: any, onClose: () 
 
   useEffect(() => {
     fetchUserFavorites();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchUserFavorites = async () => {
     try {
@@ -1092,8 +1165,18 @@ function UserDetailsModal({ user, onClose, onUpdate }: { user: any, onClose: () 
   );
 }
 
+interface IndicatorData {
+  id: string;
+  name: string;
+  status: 'active' | 'inactive';
+  description: string;
+  frequency: string;
+  source: string;
+  lastUpdated: string;
+}
+
 function IndicatorsTab() {
-  const [indicators, setIndicators] = useState<any[]>([]);
+  const [indicators, setIndicators] = useState<IndicatorData[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
@@ -1279,11 +1362,445 @@ function IndicatorsTab() {
   );
 }
 
+interface APIService {
+  id: string;
+  name: string;
+  description: string;
+  status: 'healthy' | 'error' | 'disabled';
+  lastChecked: string;
+  responseTime: number | null;
+  dailyQuota: number | null;
+  quotaUsed: number | null;
+  rateLimitPerHour: number | null;
+  currentHourUsage: number | null;
+  endpoint: string;
+  keyConfigured: boolean;
+  lastError: string | null;
+  uptime: number | null;
+}
+
+interface APIConfig {
+  rateLimits: Record<string, {
+    requestsPerHour: number;
+    requestsPerDay: number;
+    enabled: boolean;
+  }>;
+  retrySettings: {
+    maxRetries: number;
+    backoffMultiplier: number;
+    initialDelayMs: number;
+  };
+  timeouts: {
+    connectionTimeoutMs: number;
+    requestTimeoutMs: number;
+  };
+  caching: {
+    enabled: boolean;
+    defaultTtlMinutes: number;
+    maxCacheSize: number;
+  };
+  monitoring: {
+    healthCheckIntervalMinutes: number;
+    alertThresholdMs: number;
+    uptimeTrackingDays: number;
+  };
+}
+
 function APIStatusTab({ stats }: { stats: AdminStats | null }) {
+  const [apiServices, setApiServices] = useState<APIService[]>([]);
+  const [apiConfig, setApiConfig] = useState<APIConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'status' | 'config'>('status');
+  const [testingService, setTestingService] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchAPIStatus();
+    fetchAPIConfig();
+  }, []);
+
+  const fetchAPIStatus = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${API_BASE_URL}/api/admin/api-status`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setApiServices(data.data.services);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching API status:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAPIConfig = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${API_BASE_URL}/api/admin/api-config`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setApiConfig(data.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching API config:', error);
+    }
+  };
+
+  const testAPIConnection = async (serviceId: string) => {
+    try {
+      setTestingService(serviceId);
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${API_BASE_URL}/api/admin/api-status/${serviceId}/test`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Refresh API status after test
+          fetchAPIStatus();
+        }
+      }
+    } catch (error) {
+      console.error('Error testing API connection:', error);
+    } finally {
+      setTestingService(null);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'healthy':
+        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+      case 'error':
+        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+      case 'disabled':
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+      default:
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'healthy':
+        return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'error':
+        return <AlertTriangle className="w-4 h-4 text-red-600" />;
+      case 'disabled':
+        return <AlertCircle className="w-4 h-4 text-gray-600" />;
+      default:
+        return <Clock className="w-4 h-4 text-yellow-600" />;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">API Status & Configuration</h3>
-      <p className="text-gray-600 dark:text-gray-400">API status monitoring coming soon...</p>
+    <div className="space-y-6">
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-8">
+          {[
+            { id: 'status', label: 'API Status', icon: Activity },
+            { id: 'config', label: 'Configuration', icon: Settings }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as 'status' | 'config')}
+              className={`flex items-center px-1 py-4 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
+              }`}
+            >
+              <tab.icon className="w-4 h-4 mr-2" />
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {activeTab === 'status' && (
+        <div className="space-y-6">
+          {/* Overall Health Summary */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">System Health Overview</h3>
+              <button
+                onClick={fetchAPIStatus}
+                className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {apiServices.filter(s => s.status === 'healthy').length}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">Healthy</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">
+                  {apiServices.filter(s => s.status === 'error').length}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">Errors</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-600">
+                  {apiServices.filter(s => s.status === 'disabled').length}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">Disabled</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{apiServices.length}</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">Total APIs</div>
+              </div>
+            </div>
+          </div>
+
+          {/* API Services Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {apiServices.map((service) => (
+              <motion.div
+                key={service.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    {getStatusIcon(service.status)}
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        {service.name}
+                      </h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {service.description}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(service.status)}`}>
+                    {service.status}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {/* Key Configuration */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">API Key:</span>
+                    <span className={`text-sm ${service.keyConfigured ? 'text-green-600' : 'text-red-600'}`}>
+                      {service.keyConfigured ? '✓ Configured' : '✗ Missing'}
+                    </span>
+                  </div>
+
+                  {/* Response Time */}
+                  {service.responseTime && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Response Time:</span>
+                      <span className="text-sm text-gray-900 dark:text-white">
+                        {service.responseTime}ms
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Quota Usage */}
+                  {service.dailyQuota && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Daily Quota:</span>
+                        <span className="text-sm text-gray-900 dark:text-white">
+                          {service.quotaUsed}/{service.dailyQuota}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full"
+                          style={{
+                            width: `${Math.min(((service.quotaUsed || 0) / service.dailyQuota) * 100, 100)}%`
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Uptime */}
+                  {service.uptime && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Uptime:</span>
+                      <span className="text-sm text-gray-900 dark:text-white">
+                        {service.uptime}%
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Test Connection Button */}
+                  <button
+                    onClick={() => testAPIConnection(service.id)}
+                    disabled={testingService === service.id}
+                    className="w-full mt-4 px-4 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                  >
+                    {testingService === service.id ? (
+                      <span className="flex items-center justify-center">
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Testing...
+                      </span>
+                    ) : (
+                      'Test Connection'
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'config' && apiConfig && (
+        <div className="space-y-6">
+          {/* Rate Limits Configuration */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Rate Limits</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Object.entries(apiConfig.rateLimits).map(([service, limits]) => (
+                <div key={service} className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
+                  <h4 className="font-medium text-gray-900 dark:text-white capitalize mb-2">
+                    {service}
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Per Hour:</span>
+                      <span className="text-gray-900 dark:text-white">{limits.requestsPerHour}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Per Day:</span>
+                      <span className="text-gray-900 dark:text-white">{limits.requestsPerDay}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Enabled:</span>
+                      <span className={limits.enabled ? 'text-green-600' : 'text-red-600'}>
+                        {limits.enabled ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* System Configuration */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Configuration</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Retry Settings */}
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Retry Settings</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Max Retries:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.retrySettings.maxRetries}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Backoff Multiplier:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.retrySettings.backoffMultiplier}x</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Initial Delay:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.retrySettings.initialDelayMs}ms</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeouts */}
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Timeouts</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Connection:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.timeouts.connectionTimeoutMs}ms</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Request:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.timeouts.requestTimeoutMs}ms</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Caching */}
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Caching</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Enabled:</span>
+                    <span className={apiConfig.caching.enabled ? 'text-green-600' : 'text-red-600'}>
+                      {apiConfig.caching.enabled ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Default TTL:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.caching.defaultTtlMinutes} min</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Max Cache Size:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.caching.maxCacheSize}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Monitoring */}
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-white mb-3">Monitoring</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Health Check Interval:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.monitoring.healthCheckIntervalMinutes} min</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Alert Threshold:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.monitoring.alertThresholdMs}ms</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Uptime Tracking:</span>
+                    <span className="text-gray-900 dark:text-white">{apiConfig.monitoring.uptimeTrackingDays} days</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1547,6 +2064,673 @@ function SyncStatusTab() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Email Marketing Tab Component
+function EmailMarketingTab() {
+  const [selectedCampaign, setSelectedCampaign] = useState('all');
+  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'templates'>('dashboard');
+  
+  // State for API data
+  const [emailMetrics, setEmailMetrics] = useState<EmailMetrics | null>(null);
+  const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
+  const [contactList, setContactList] = useState<EmailContact[]>([]);
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  
+  // Loading and pagination state
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [contactPage, setContactPage] = useState(1);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [showResendModal, setShowResendModal] = useState<string | null>(null);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  
+  const CONTACTS_PER_PAGE = 10;
+
+  // Fetch email metrics
+  useEffect(() => {
+    fetchEmailMetrics();
+  }, [selectedCampaign]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch campaigns on mount
+  useEffect(() => {
+    fetchCampaigns();
+  }, []);
+
+  // Fetch contact list when page or campaign changes
+  useEffect(() => {
+    if (activeSubTab === 'dashboard') {
+      fetchContactList();
+    }
+  }, [activeSubTab, contactPage, selectedCampaign]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch templates when templates tab is active
+  useEffect(() => {
+    if (activeSubTab === 'templates') {
+      fetchTemplates();
+    }
+  }, [activeSubTab]);
+
+  const fetchEmailMetrics = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const campaignParam = selectedCampaign !== 'all' ? `?campaign=${selectedCampaign}` : '';
+      const response = await fetch(`${API_BASE_URL}/api/admin/email/metrics${campaignParam}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch email metrics');
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        setEmailMetrics(data.data);
+      } else {
+        throw new Error(data.error || 'Failed to fetch email metrics');
+      }
+    } catch (error) {
+      console.error('Error fetching email metrics:', error);
+      setError('Failed to load email metrics. This feature is not yet implemented on the backend.');
+      // Fallback to placeholder data for development
+      setEmailMetrics({
+        totalSends: 0,
+        sendsChange: 0,
+        opens: 0,
+        opensChange: 0,
+        clicks: 0,
+        clicksChange: 0,
+        bounces: 0,
+        bouncesChange: 0,
+        unsubscribes: 0,
+        unsubscribesChange: 0
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCampaigns = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${API_BASE_URL}/api/admin/email/campaigns`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setCampaigns([{ id: 'all', name: 'View All' }, ...data.data]);
+          return;
+        }
+      }
+      
+      // Fallback to placeholder data
+      setCampaigns([
+        { id: 'all', name: 'View All' },
+        { id: 'weekly-digest', name: 'Weekly Economic Digest' },
+        { id: 'market-alerts', name: 'Market Alerts' },
+        { id: 'pro-updates', name: 'Pro User Updates' }
+      ]);
+    } catch (error) {
+      console.error('Error fetching campaigns:', error);
+      setCampaigns([{ id: 'all', name: 'View All' }]);
+    }
+  };
+
+  const fetchContactList = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const campaignParam = selectedCampaign !== 'all' ? `&campaign=${selectedCampaign}` : '';
+      const response = await fetch(
+        `${API_BASE_URL}/api/admin/email/contacts?page=${contactPage}&limit=${CONTACTS_PER_PAGE}${campaignParam}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setContactList(data.data.contacts);
+          setTotalContacts(data.data.total);
+          return;
+        }
+      }
+      
+      // Fallback to empty list since this is a new feature
+      setContactList([]);
+      setTotalContacts(0);
+    } catch (error) {
+      console.error('Error fetching contact list:', error);
+      setContactList([]);
+      setTotalContacts(0);
+    }
+  };
+
+  const fetchTemplates = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${API_BASE_URL}/api/admin/email/templates`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setTemplates(data.data);
+          return;
+        }
+      }
+      
+      // Fallback to empty list since this is a new feature
+      setTemplates([]);
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+      setTemplates([]);
+    }
+  };
+
+  const handleResendEmail = async (email: string) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      
+      const response = await fetch(`${API_BASE_URL}/api/admin/email/resend`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, campaignId: selectedCampaign })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setShowResendModal(null);
+          fetchContactList(); // Refresh the list
+          return;
+        }
+      }
+      
+      throw new Error('Failed to create resend segment');
+    } catch (error) {
+      console.error('Error creating resend segment:', error);
+      alert('Resend functionality is not yet implemented on the backend.');
+      setShowResendModal(null);
+    }
+  };
+
+  const getStatusBadge = (status: EmailContact['status']) => {
+    const badges = {
+      sent: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
+      opened: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+      clicked: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+      bounced: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+    };
+    return badges[status];
+  };
+
+  const funnelData: FunnelData[] = useMemo(() => {
+    if (!emailMetrics) return [];
+    
+    return [
+      { label: 'Sends', value: emailMetrics.totalSends, percentage: 100, color: 'bg-blue-500' },
+      { label: 'Opens', value: emailMetrics.opens, percentage: emailMetrics.totalSends > 0 ? (emailMetrics.opens / emailMetrics.totalSends) * 100 : 0, color: 'bg-green-500' },
+      { label: 'Clicks', value: emailMetrics.clicks, percentage: emailMetrics.totalSends > 0 ? (emailMetrics.clicks / emailMetrics.totalSends) * 100 : 0, color: 'bg-purple-500' },
+      { label: 'Bounces', value: emailMetrics.bounces, percentage: emailMetrics.totalSends > 0 ? (emailMetrics.bounces / emailMetrics.totalSends) * 100 : 0, color: 'bg-red-500' },
+      { label: 'Unsubscribes', value: emailMetrics.unsubscribes, percentage: emailMetrics.totalSends > 0 ? (emailMetrics.unsubscribes / emailMetrics.totalSends) * 100 : 0, color: 'bg-gray-500' }
+    ];
+  }, [emailMetrics]);
+
+  if (loading && !emailMetrics) {
+    return (
+      <div className="flex justify-center py-12">
+        <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Sub-navigation */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-8">
+          {[
+            { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+            { id: 'templates', label: 'Templates', icon: FileText }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveSubTab(tab.id as 'dashboard' | 'templates')}
+              className={`flex items-center px-1 py-4 text-sm font-medium border-b-2 transition-colors ${
+                activeSubTab === tab.id
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
+              }`}
+            >
+              <tab.icon className="w-4 h-4 mr-2" />
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {activeSubTab === 'dashboard' && (
+        <>
+          {/* Error Banner */}
+          {error && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <div className="flex">
+                <AlertTriangle className="w-5 h-5 text-yellow-400 mr-3 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                    Development Notice
+                  </h4>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                    {error}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Campaign Selection */}
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Email Marketing Dashboard</h3>
+              <div className="relative">
+                <select
+                  value={selectedCampaign}
+                  onChange={(e) => setSelectedCampaign(e.target.value)}
+                  disabled={loading}
+                  className="appearance-none bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-8 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                >
+                  {campaigns.map((campaign) => (
+                    <option key={campaign.id} value={campaign.id}>
+                      {campaign.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
+            </div>
+          </div>
+
+          {/* Hero Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Sends</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {emailMetrics?.totalSends.toLocaleString() || '0'}
+                  </p>
+                  <p className={`text-sm ${(emailMetrics?.sendsChange || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {(emailMetrics?.sendsChange || 0) >= 0 ? '+' : ''}{emailMetrics?.sendsChange || 0}%
+                  </p>
+                </div>
+                <Send className="w-8 h-8 text-blue-600" />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Opens</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {emailMetrics?.opens.toLocaleString() || '0'}
+                  </p>
+                  <p className={`text-sm ${(emailMetrics?.opensChange || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {(emailMetrics?.opensChange || 0) >= 0 ? '+' : ''}{emailMetrics?.opensChange || 0}%
+                  </p>
+                </div>
+                <Eye className="w-8 h-8 text-green-600" />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Clicks</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {emailMetrics?.clicks.toLocaleString() || '0'}
+                  </p>
+                  <p className={`text-sm ${(emailMetrics?.clicksChange || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {(emailMetrics?.clicksChange || 0) >= 0 ? '+' : ''}{emailMetrics?.clicksChange || 0}%
+                  </p>
+                </div>
+                <MousePointer className="w-8 h-8 text-purple-600" />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Bounces</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {emailMetrics?.bounces.toLocaleString() || '0'}
+                  </p>
+                  <p className={`text-sm ${(emailMetrics?.bouncesChange || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {(emailMetrics?.bouncesChange || 0) >= 0 ? '+' : ''}{emailMetrics?.bouncesChange || 0}%
+                  </p>
+                </div>
+                <AlertTriangle className="w-8 h-8 text-red-600" />
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Unsubscribes</p>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {emailMetrics?.unsubscribes.toLocaleString() || '0'}
+                  </p>
+                  <p className={`text-sm ${(emailMetrics?.unsubscribesChange || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {(emailMetrics?.unsubscribesChange || 0) >= 0 ? '+' : ''}{emailMetrics?.unsubscribesChange || 0}%
+                  </p>
+                </div>
+                <UserX className="w-8 h-8 text-orange-600" />
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Funnel Visualization */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Email Campaign Funnel</h3>
+            <div className="space-y-4">
+              {funnelData.map((stage, index) => (
+                <div key={stage.label} className="flex items-center space-x-4">
+                  <div className="w-20 text-sm font-medium text-gray-600 dark:text-gray-400">
+                    {stage.label}
+                  </div>
+                  <div className="flex-1 relative">
+                    <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden">
+                      <div
+                        className={`h-full ${stage.color} transition-all duration-300`}
+                        style={{ width: `${stage.percentage}%` }}
+                      />
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-between px-3">
+                      <span className="text-sm font-medium text-white drop-shadow">
+                        {stage.value.toLocaleString()}
+                      </span>
+                      <span className="text-sm font-medium text-white drop-shadow">
+                        {stage.percentage.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                  {index < funnelData.length - 1 && (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {((funnelData[index + 1].value / stage.value) * 100).toFixed(1)}%
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Contact List Table */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Contact List</h3>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                {contactList.length > 0 ? `${contactList.length} contacts loaded` : 'Loading contacts...'}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Email Address
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Last Activity
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {contactList.map((contact) => (
+                    <tr key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                        {contact.email}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(contact.status)}`}>
+                          {contact.status.charAt(0).toUpperCase() + contact.status.slice(1)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        {new Date(contact.lastActivity).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {contact.status === 'bounced' && (
+                          <button
+                            onClick={() => setShowResendModal(contact.email)}
+                            className="inline-flex items-center px-3 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200 transition-colors"
+                            title="Click to create re-send segment"
+                          >
+                            <RotateCcw className="w-3 h-3 mr-1" />
+                            Resend
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalContacts > 0 && (
+              <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  Showing {((contactPage - 1) * CONTACTS_PER_PAGE) + 1}-{Math.min(contactPage * CONTACTS_PER_PAGE, totalContacts)} of {totalContacts.toLocaleString()} contacts
+                </span>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setContactPage(Math.max(1, contactPage - 1))}
+                    disabled={contactPage <= 1}
+                    className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setContactPage(Math.min(Math.ceil(totalContacts / CONTACTS_PER_PAGE), contactPage + 1))}
+                    disabled={contactPage >= Math.ceil(totalContacts / CONTACTS_PER_PAGE)}
+                    className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Empty State */}
+            {contactList.length === 0 && !loading && (
+              <div className="px-6 py-12 text-center">
+                <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No contacts found</h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  {selectedCampaign === 'all' ? 'No email contacts available yet.' : 'No contacts found for this campaign.'}
+                </p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeSubTab === 'templates' && (
+        <>
+          {/* Template Management */}
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Email Templates</h3>
+              <button
+                onClick={() => setShowTemplateEditor(true)}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create New Template
+              </button>
+            </div>
+          </div>
+
+          {/* Template Grid */}
+          {templates.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {templates.map((template) => (
+                <motion.div
+                  key={template.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-md transition-shadow"
+                >
+                  <div className="aspect-video bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                    <FileText className="w-12 h-12 text-gray-400" />
+                  </div>
+                  <div className="p-4">
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                      {template.name}
+                    </h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                      Last modified: {new Date(template.lastModified).toLocaleDateString()}
+                    </p>
+                    <div className="flex space-x-2">
+                      <button className="flex-1 flex items-center justify-center px-3 py-2 text-xs bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200 transition-colors">
+                        <Edit className="w-3 h-3 mr-1" />
+                        Edit
+                      </button>
+                      <button className="flex-1 flex items-center justify-center px-3 py-2 text-xs bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 transition-colors">
+                        <Eye className="w-3 h-3 mr-1" />
+                        Preview
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
+              <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No templates found</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Create your first email template to get started with email marketing campaigns.
+              </p>
+              <button
+                onClick={() => setShowTemplateEditor(true)}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mx-auto"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Your First Template
+              </button>
+            </div>
+          )}
+
+          {/* Template Editor Placeholder */}
+          {showTemplateEditor && (
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Template Editor</h3>
+                <button
+                  onClick={() => setShowTemplateEditor(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-12 text-center">
+                <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  Email Template Editor
+                </h4>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Rich text editor with drag-and-drop components would go here
+                </p>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Resend Confirmation Modal */}
+      {showResendModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Create Re-send Segment</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Do you want to create a re-send segment for bounced email: <strong>{showResendModal}</strong>?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowResendModal(null)}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleResendEmail(showResendModal)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Create Segment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

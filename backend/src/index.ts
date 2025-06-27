@@ -7,7 +7,7 @@ import userRoutes from './routes/users';
 import syncRoutes from './routes/sync';
 import userPreferencesRoutes from './routes/userPreferences';
 import analysisRoutes from './routes/analysis';
-import adminRoutes from './routes/admin';
+import adminRoutes from './routes/admin/index';
 import authRoutes from './routes/auth';
 import emailRoutes from './routes/email';
 import { backgroundWorker } from './services/backgroundWorker';
