@@ -1,40 +1,21 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* Tailwind v4 theme configuration */
-@theme {
-  --color-background: #ffffff;
-  --color-foreground: #171717;
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
-}
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+  }
 
-/* Dark mode variants */
-@variant dark (.dark &);
-
-:root {
-  --background: var(--color-background);
-  --foreground: var(--color-foreground);
-}
-
-/* Dark mode support */
-.dark {
-  --color-background: #0a0a0a;
-  --color-foreground: #ededed;
-  --background: var(--color-background);
-  --foreground: var(--color-foreground);
-}
-
-.light {
-  --color-background: #ffffff;
-  --color-foreground: #171717;
-  --background: var(--color-background);
-  --foreground: var(--color-foreground);
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  .dark {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 93%;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
 /* Custom animations for enhanced UI */

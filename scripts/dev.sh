@@ -17,7 +17,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # Start backend server
-echo "📊 Starting backend server on port 3001..."
+echo "📊 Starting backend server on port 3051..."
 cd "$PROJECT_ROOT/backend" && npm run dev &
 BACKEND_PID=$!
 
@@ -25,15 +25,15 @@ BACKEND_PID=$!
 sleep 3
 
 # Start frontend server  
-echo "🌐 Starting frontend server on port 3000..."
-cd "$PROJECT_ROOT/frontend" && npm run dev &
+echo "🌐 Starting frontend server on port 3050..."
+cd "$PROJECT_ROOT/frontend" && npm run dev -- --port 3050 &
 FRONTEND_PID=$!
 
 echo ""
 echo "✅ Servers started successfully!"
-echo "🔗 Frontend: http://localhost:3000 (or next available port)"
-echo "🔗 Backend: http://localhost:3001"
-echo "📋 API Health: http://localhost:3001/health"
+echo "🔗 Frontend: http://localhost:3050"
+echo "🔗 Backend: http://localhost:3051"
+echo "📋 API Health: http://localhost:3051/health"
 echo ""
 echo "✨ Enhanced features available:"
 echo "├─ 🎯 Click any card for detailed information"

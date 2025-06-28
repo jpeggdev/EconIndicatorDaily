@@ -1,14 +1,14 @@
 'use client';
 
 import { SessionProvider } from 'next-auth/react';
-import { ThemeProvider } from '@/contexts/ThemeContext';
+import { HeroUIProvider } from '@heroui/react';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <ThemeProvider>
+      <HeroUIProvider defaultTheme="dark">
         {children}
-      </ThemeProvider>
+      </HeroUIProvider>
     </SessionProvider>
   );
 }

@@ -116,6 +116,12 @@ export const coreMarketIndicators = [
   },
   {
     symbol: 'VXX',
+    name: 'CBOE Volatility Index',
+    category: 'volatility',
+    description: 'VIX futures ETF tracking CBOE Volatility Index'
+  },
+  {
+    symbol: 'VXX',
     name: 'iPath Series B S&P 500 VIX Short-Term Futures ETN',
     category: 'volatility',
     description: 'Tracks short-term VIX futures, providing exposure to market volatility'
